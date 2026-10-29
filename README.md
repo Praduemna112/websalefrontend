@@ -2,6 +2,24 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## WebSale
+
+The React app provides the WebSale storefront, login/registration, cart and cash-on-delivery checkout, customer account/order history, and a staff-only store dashboard.
+
+Run the Django API from `..\websalebackend` first:
+```powershell
+python manage.py migrate
+python manage.py runserver
+```
+
+Then run this app:
+```powershell
+npm install
+npm start
+```
+
+Open `http://localhost:3000`. The development proxy forwards `/api` requests to Django at `http://127.0.0.1:8000`. Create an administrator with `python manage.py createsuperuser` in the backend folder, then sign in at `/login` and open `/admin`.
+
 ## Available Scripts
 
 In the project directory, you can run:
