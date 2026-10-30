@@ -22,7 +22,9 @@ export function getStoredUser() {
   }
 }
 
-export function storeAuth({ token, user }) {
+export function storeAuth(data) {
+  if (!data) return;
+  const { token, user } = data;
   if (token) localStorage.setItem(TOKEN_KEY, token);
   if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
 }

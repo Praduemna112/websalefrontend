@@ -64,9 +64,9 @@ function App() {
 
   function authComplete(data) {
     storeAuth(data);
-    setUser(data.user);
+    setUser(data?.user || null);
     const next = new URLSearchParams(window.location.search).get('next');
-    window.location.assign(next || (data.user.is_staff ? '/admin' : '/account'));
+    window.location.assign(next || (data?.user?.is_staff ? '/admin' : '/account'));
   }
 
   let page;
