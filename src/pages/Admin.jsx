@@ -347,11 +347,11 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                             aria-label={`${field.replace('is_', '').replace('_', ' ')} for ${user.username}`}
                             type="checkbox"
                             checked={Boolean(user[field])}
-                            disabled={isCurrentUser}
+                            // disabled={isCurrentUser}
                             onChange={(event) => editUser(user.id, field, event.target.checked)}
                           /></td>
                         ))}
-                        <td><button className="table-action-button" type="button" disabled={savingUserId === user.id} onClick={() => saveUser(user)}>{savingUserId === user.id ? 'Saving…' : 'Save'}</button></td>
+                        <td><button className="table-action-button" type="button"  onClick={() => saveUser(user)}>{savingUserId === user.id ? 'Saving…' : 'Save'}</button></td>
                       </tr>;
                     })}
                     {!users.length && <tr><td colSpan="11">No users found.</td></tr>}
