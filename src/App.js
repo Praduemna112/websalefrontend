@@ -3,6 +3,7 @@ import './Store.css';
 import { api, getCartSessionId, getStoredUser, clearAuth, storeAuth } from './services/api';
 import Userlogin from './pages/User/Userlogin';
 import UserRegister from './pages/User/UserRegister';
+import UserForgotPassword from './pages/User/UserForgotPassword';
 import Storefront from './pages/Storefront';
 import CartPage from './pages/Cart';
 import CheckoutPage from './pages/Checkout';
@@ -41,6 +42,8 @@ function App() {
   const [appError, setAppError] = useState('');
   const sessionId = getCartSessionId();
   const route = window.location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
+  const isAuthPage = route === '/login' || route === '/register' || route === '/forgot-password';
+  const userId = user?.id;
 
   const refreshCartCount = useCallback(async () => {
     try {
@@ -53,8 +56,18 @@ function App() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (route !== '/login' && route !== '/register') refreshCartCount();
-  }, [refreshCartCount, route]);
+    if (!isAuthPage) refreshCartCount();
+  }, [refreshCartCount, isAuthPage]);
+
+  useEffect(() => {
+    if (route !== '/admin' || !userId) return;
+    api('/api/auth/profile/')
+      .then((currentUser) => {
+        storeAuth({ user: currentUser, token: localStorage.getItem('websale-token') });
+        setUser(currentUser);
+      })
+      .catch((error) => setAppError(error.message));
+  }, [route, userId]);
 
   function signOut() {
     clearAuth();
@@ -74,6 +87,8 @@ function App() {
     page = <Userlogin onSuccess={authComplete} />;
   } else if (route === '/register') {
     page = <UserRegister onSuccess={authComplete} />;
+  } else if (route === '/forgot-password') {
+    page = <UserForgotPassword />;
   } else if (route === '/cart') {
     page = <CartPage sessionId={sessionId} onCartChange={refreshCartCount} />;
   } else if (route === '/checkout') {
@@ -86,23 +101,25 @@ function App() {
       }} />
       : <SignInPrompt />;
   } else if (route === '/admin') {
-    page = user?.is_staff ? <AdminPage /> : <SignInPrompt adminOnly />;
+    page = user?.is_staff
+      ? <AdminPage currentUserId={user.id} isSuperuser={user.is_superuser} />
+      : <SignInPrompt adminOnly />;
   } else {
     page = <Storefront sessionId={sessionId} onCartChange={refreshCartCount} />;
   }
 
   return (
     <>
-      {route !== '/login' && route !== '/register' && (
+      {!isAuthPage && (
         <Header user={user} cartCount={cartCount} onSignOut={signOut} />
       )}
-      {appError && route !== '/login' && route !== '/register' && (
+      {appError && !isAuthPage && (
         <div className="app-alert" role="alert">
           Could not reach the store API: {appError}. Start Django on port 8000 and refresh.
         </div>
       )}
       {page}
-      {route !== '/login' && route !== '/register' && <footer className="site-footer">Thoughtful finds, delivered to your door.</footer>}
+      {!isAuthPage && <footer className="site-footer">Thoughtful finds, delivered to your door.</footer>}
     </>
   );
 }

@@ -1,0 +1,16 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Let LiteSpeed / Passenger handle all /api requests
+  RewriteCond %{REQUEST_URI} ^/api [NC]
+  RewriteRule .* - [L]
+
+  # 2. Existing real files/directories (js, css, images)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. All React routes (/login, /register, /cart, /admin, etc.) load index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

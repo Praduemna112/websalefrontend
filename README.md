@@ -4,7 +4,7 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 
 ## WebSale
 
-The React app provides the WebSale storefront, login/registration, cart and cash-on-delivery checkout, customer account/order history, and a staff-only store dashboard.
+The React app provides the WebSale storefront, login/registration, cart and cash-on-delivery checkout, customer account/order history, and a staff-only store dashboard. Superusers also have a Users section for viewing every account and managing user details and staff/superuser access.
 
 Run the Django API from `..\websalebackend` first:
 ```powershell

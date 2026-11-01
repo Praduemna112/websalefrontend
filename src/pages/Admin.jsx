@@ -9,15 +9,18 @@ function money(value) {
   return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 }
 
-export default function AdminPage() {
+export default function AdminPage({ currentUserId, isSuperuser = false }) {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [orders, setOrders] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [users, setUsers] = useState([]);
   const [productForm, setProductForm] = useState(null);
   const [categoryName, setCategoryName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingUserId, setSavingUserId] = useState(null);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [readingImage, setReadingImage] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -36,9 +39,63 @@ export default function AdminPage() {
     setPayments(Array.isArray(paymentData) ? paymentData : paymentData.results || []);
   }, []);
 
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      setUsers(unwrapList(await api('/api/auth/users/')));
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadDashboard().catch((loadError) => setError(loadError.message)).finally(() => setLoading(false));
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (isSuperuser) loadUsers().catch((loadError) => setError(loadError.message));
+  }, [isSuperuser, loadUsers]);
+
+  async function refreshData() {
+    await loadDashboard();
+    if (isSuperuser) await loadUsers();
+  }
+
+  function editUser(userId, field, value) {
+    setUsers((current) => current.map((user) => {
+      if (user.id !== userId) return user;
+      const updated = { ...user, [field]: value };
+      if (field === 'is_superuser' && value) updated.is_staff = true;
+      if (field === 'is_staff' && !value) updated.is_superuser = false;
+      return updated;
+    }));
+  }
+
+  async function saveUser(user) {
+    setSavingUserId(user.id);
+    setError('');
+    setNotice('');
+    try {
+      const updatedUser = await api(`/api/auth/users/${user.id}/`, {
+        method: 'PATCH',
+        body: jsonBody({
+          username: user.username,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          is_active: user.is_active,
+          is_staff: user.is_staff,
+          is_superuser: user.is_superuser,
+        }),
+      });
+      setUsers((current) => current.map((item) => item.id === updatedUser.id ? updatedUser : item));
+      setNotice(`User ${updatedUser.username} updated.`);
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSavingUserId(null);
+    }
+  }
 
   function startProduct(product) {
     setReadingImage(false);
@@ -190,7 +247,7 @@ export default function AdminPage() {
         <span className="eyebrow">YOUR STORE</span>
         <h1>Little by little,<br /><em>big things.</em></h1>
         <nav className="admin-nav" aria-label="Admin sections">
-          {[['overview', 'Overview'], ['products', 'Products'], ['orders', 'Orders'], ['categories', 'Categories']].map(([key, label]) => (
+          {[['overview', 'Overview'], ['products', 'Products'], ['orders', 'Orders'], ['categories', 'Categories'], ...(isSuperuser ? [['users', 'Users']] : [])].map(([key, label]) => (
             <button type="button" className={section === key ? 'admin-nav-item active' : 'admin-nav-item'} key={key} onClick={() => setSection(key)}>
               <span>{label}</span><span>↗</span>
             </button>
@@ -199,7 +256,7 @@ export default function AdminPage() {
         <a className="admin-store-link" href="/">← Back to store</a>
       </aside>
       <section className="admin-content">
-        <div className="admin-topbar"><div><span className="eyebrow">WEBSALE / ADMIN</span><h2>{section[0].toUpperCase() + section.slice(1)}</h2></div><button className="button button-outline" type="button" onClick={() => loadDashboard().catch((loadError) => setError(loadError.message))}>↻ Refresh data</button></div>
+        <div className="admin-topbar"><div><span className="eyebrow">WEBSALE / ADMIN</span><h2>{section[0].toUpperCase() + section.slice(1)}</h2></div><button className="button button-outline" type="button" onClick={() => refreshData().catch((loadError) => setError(loadError.message))}>↻ Refresh data</button></div>
         {error && <div className="notice notice-error" role="alert">{error}</div>}
         {notice && <div className="notice notice-success" role="status">{notice}</div>}
         {loading ? <p className="loading-state">Gathering your store data…</p> : (
@@ -211,6 +268,7 @@ export default function AdminPage() {
                   <article className="stat-card"><span>All orders</span><strong>{orders.length}</strong><small>{orders.filter((item) => item.status === 'PENDING').length} need a look</small></article>
                   <article className="stat-card"><span>Order value</span><strong>{money(revenue)}</strong><small>Excludes cancelled orders</small></article>
                   <article className="stat-card"><span>Payments on file</span><strong>{payments.length}</strong><small>Customer payments</small></article>
+                  {isSuperuser && <article className="stat-card"><span>Registered users</span><strong>{users.length}</strong><small>Active and inactive accounts</small></article>}
                 </div>
                 <section className="admin-panel">
                   <div className="panel-heading panel-heading-row"><div><span className="eyebrow">FRESH FROM THE SHOP</span><h3>Recent orders</h3></div><button className="text-link" onClick={() => setSection('orders')} type="button">All orders →</button></div>
@@ -261,6 +319,44 @@ export default function AdminPage() {
                 <div className="panel-heading"><span className="eyebrow">ORGANIZE THE GOOD STUFF</span><h3>Categories</h3></div>
                 <form className="category-form" onSubmit={createCategory}><label className="field">New category<input required value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="e.g. Home & living" /></label><button className="button button-primary" type="submit">Add category</button></form>
                 <div className="category-admin-list">{categories.map((category) => <div key={category.id}><div><strong>{category.name}</strong><span>{category.products_count || 0} products</span></div><span className="category-slug">{category.slug}</span></div>)}{!categories.length && <p>No categories yet.</p>}</div>
+              </section>
+            )}
+            {section === 'users' && isSuperuser && (
+              <section className="admin-panel">
+                <div className="panel-heading panel-heading-row">
+                  <div><span className="eyebrow">ACCOUNT ACCESS</span><h3>Users <small>({users.length} total)</small></h3></div>
+                  <span className="user-count-note">{users.filter((user) => user.is_active).length} active</span>
+                </div>
+                <p className="user-admin-help">Only superusers can manage accounts. Superusers have full Django administration access; staff accounts can manage the store.</p>
+                {usersLoading ? <p className="loading-state">Loading users…</p> : (
+                  <div className="table-scroll"><table className="admin-table user-admin-table"><thead><tr>
+                    <th>ID</th><th>Username</th><th>Email</th><th>First name</th><th>Last name</th><th>Joined</th><th>Last login</th><th>Active</th><th>Staff</th><th>Superuser</th><th>Actions</th>
+                  </tr></thead><tbody>
+                    {users.map((user) => {
+                      const isCurrentUser = user.id === currentUserId;
+                      return <tr key={user.id}>
+                        <td>{user.id}</td>
+                        <td><input aria-label={`Username for ${user.username}`} className="user-admin-input" value={user.username} onChange={(event) => editUser(user.id, 'username', event.target.value)} /></td>
+                        <td><input aria-label={`Email for ${user.username}`} className="user-admin-input" type="email" value={user.email || ''} onChange={(event) => editUser(user.id, 'email', event.target.value)} /></td>
+                        <td><input aria-label={`First name for ${user.username}`} className="user-admin-input" value={user.first_name || ''} onChange={(event) => editUser(user.id, 'first_name', event.target.value)} /></td>
+                        <td><input aria-label={`Last name for ${user.username}`} className="user-admin-input" value={user.last_name || ''} onChange={(event) => editUser(user.id, 'last_name', event.target.value)} /></td>
+                        <td>{user.date_joined ? new Date(user.date_joined).toLocaleDateString() : '—'}</td>
+                        <td>{user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}</td>
+                        {['is_active', 'is_staff', 'is_superuser'].map((field) => (
+                          <td key={field}><input
+                            aria-label={`${field.replace('is_', '').replace('_', ' ')} for ${user.username}`}
+                            type="checkbox"
+                            checked={Boolean(user[field])}
+                            disabled={isCurrentUser}
+                            onChange={(event) => editUser(user.id, field, event.target.checked)}
+                          /></td>
+                        ))}
+                        <td><button className="table-action-button" type="button" disabled={savingUserId === user.id} onClick={() => saveUser(user)}>{savingUserId === user.id ? 'Saving…' : 'Save'}</button></td>
+                      </tr>;
+                    })}
+                    {!users.length && <tr><td colSpan="11">No users found.</td></tr>}
+                  </tbody></table></div>
+                )}
               </section>
             )}
           </>

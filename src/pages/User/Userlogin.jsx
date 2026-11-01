@@ -59,7 +59,10 @@ export default function Userlogin({ onSuccess }) {
           <form className="auth-form" onSubmit={handleSubmit}>
             <label htmlFor="login-username">Username</label>
             <input id="login-username" name="username" type="text" placeholder="Enter your username" autoComplete="username" required />
-            <label htmlFor="login-password">Password</label>
+            <div className="password-label-row">
+              <label htmlFor="login-password">Password</label>
+              <a href="/forgot-password">Forgot password?</a>
+            </div>
             <input id="login-password" name="password" type="password" placeholder="Enter your password" autoComplete="current-password" required />
             <button className="auth-submit" type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Signing in…' : 'Sign in'} <span aria-hidden="true">→</span>
