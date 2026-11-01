@@ -5,6 +5,11 @@ function ProductCard({ product, onAdd }) {
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState('');
 
+  const hasDiscount = product.original_price && Number(product.original_price) > Number(product.price);
+  const discountPercent = product.discount_percentage || (hasDiscount
+    ? Math.round(((Number(product.original_price) - Number(product.price)) / Number(product.original_price)) * 100)
+    : 0);
+
   async function addToBag() {
     setAdding(true);
     setMessage('');
@@ -26,19 +31,28 @@ function ProductCard({ product, onAdd }) {
         ) : (
           <span className="product-monogram">{product.name.slice(0, 1)}</span>
         )}
-        {product.original_price && Number(product.original_price) > Number(product.price) && (
-          <span className="sale-tag">ON SALE</span>
+        {hasDiscount && discountPercent > 0 && (
+          <span className="sale-tag">{discountPercent}% OFF</span>
         )}
       </div>
       <div className="product-info">
         <span className="product-category">{product.category_name || 'WebSale edit'}</span>
         <h2>{product.name}</h2>
         <p className="product-description">{product.description || 'A considered choice for everyday living.'}</p>
+        {product.stock > 0 && product.stock < 6 && (
+          <div className={`stock-warning${product.stock === 1 ? ' stock-critical' : ''}`}>
+            <span className="stock-dot" />
+            {product.stock === 1 ? 'Only 1 left!' : `Only ${product.stock} remaining`}
+          </div>
+        )}
         <div className="product-buy-row">
           <span className="product-price">
             ₹{Number(product.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            {product.original_price && Number(product.original_price) > Number(product.price) && (
-              <del>₹{Number(product.original_price).toLocaleString('en-IN')}</del>
+            {hasDiscount && (
+              <>
+                <del>₹{Number(product.original_price).toLocaleString('en-IN')}</del>
+                <span className="discount-tag">({discountPercent}% OFF)</span>
+              </>
             )}
           </span>
           <button className="add-button" type="button" onClick={addToBag} disabled={adding || !product.stock}>

@@ -60,6 +60,12 @@ export default function CartPage({ sessionId, onCartChange }) {
                   <span className="product-category">{item.product.category_name || 'WebSale edit'}</span>
                   <h2>{item.product.name}</h2>
                   <span className="cart-unit-price">{money(item.product.price)} each</span>
+                  {item.product.stock > 0 && item.product.stock < 6 && (
+                    <div className={`stock-warning${item.product.stock === 1 ? ' stock-critical' : ''}`}>
+                      <span className="stock-dot" />
+                      {item.product.stock === 1 ? 'Only 1 left!' : `Only ${item.product.stock} remaining`}
+                    </div>
+                  )}
                   <div className="quantity-control">
                     <button disabled={updatingId === item.id || item.quantity <= 1} onClick={() => changeItem(item.id, 'PUT', item.quantity - 1)} type="button" aria-label="Decrease quantity">−</button>
                     <span>{item.quantity}</span>

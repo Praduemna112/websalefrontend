@@ -100,7 +100,22 @@ export default function AccountPage({ user, onProfileChange }) {
                     <span className={`status-pill status-${order.status?.toLowerCase()}`}>{order.status}</span>
                   </div>
                   <div className="order-card-items">
-                    {order.items.map((item) => <span key={item.id}>{item.quantity} × {item.product_name}</span>)}
+                    {order.items.map((item) => (
+                      <div className="order-item-row" key={item.id}>
+                        <div className="order-item-image">
+                          {item.image_url ? (
+                            <img src={item.image_url} alt={item.product_name} />
+                          ) : (
+                            <span>{(item.product_name || 'W').slice(0, 1)}</span>
+                          )}
+                        </div>
+                        <div className="order-item-info">
+                          <span className="order-item-name">{item.product_name}</span>
+                          <span className="order-item-qty-price">{item.quantity} × {money(item.price)}</span>
+                        </div>
+                        <strong className="order-item-subtotal">{money(item.subtotal)}</strong>
+                      </div>
+                    ))}
                   </div>
                   <div className="order-card-bottom">
                     <span>{order.payment?.payment_method === 'COD' ? 'Cash on delivery' : order.payment?.payment_method}</span>

@@ -308,7 +308,39 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                   </form>
                 )}
                 <div className="table-scroll"><table className="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Visibility</th><th>Actions</th></tr></thead><tbody>
-                  {products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong></td><td>{product.category_name || '—'}</td><td>{money(product.price)}</td><td>{product.stock}</td><td><span className={`status-pill ${product.is_active ? 'status-confirmed' : 'status-cancelled'}`}>{product.is_active ? 'Live' : 'Hidden'}</span></td><td><div className="table-actions"><button onClick={() => startProduct(product)} type="button">Edit</button><button className="danger-text" onClick={() => deleteProduct(product)} type="button">Delete</button></div></td></tr>)}
+                  {products.map((product) => {
+                    const hasDiscount = product.original_price && Number(product.original_price) > Number(product.price);
+                    const discountPercent = product.discount_percentage || (hasDiscount
+                      ? Math.round(((Number(product.original_price) - Number(product.price)) / Number(product.original_price)) * 100)
+                      : 0);
+                    return <tr key={product.id}>
+                      <td><strong>{product.name}</strong></td>
+                      <td>{product.category_name || '—'}</td>
+                      <td>
+                        <strong>{money(product.price)}</strong>
+                        {hasDiscount && (
+                          <div className="table-subtext">
+                            <del>{money(product.original_price)}</del>{' '}
+                            <span className="discount-tag">-{discountPercent}%</span>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <strong>{product.stock}</strong>
+                        {product.stock > 0 && product.stock < 6 && (
+                          <div className={`stock-warning${product.stock === 1 ? ' stock-critical' : ''}`} style={{ marginTop: '3px' }}>
+                            <span className="stock-dot" />
+                            {product.stock === 1 ? 'Only 1 left' : `Only ${product.stock} left`}
+                          </div>
+                        )}
+                        {product.stock === 0 && (
+                          <div className="table-subtext danger-text">Out of stock</div>
+                        )}
+                      </td>
+                      <td><span className={`status-pill ${product.is_active ? 'status-confirmed' : 'status-cancelled'}`}>{product.is_active ? 'Live' : 'Hidden'}</span></td>
+                      <td><div className="table-actions"><button onClick={() => startProduct(product)} type="button">Edit</button><button className="danger-text" onClick={() => deleteProduct(product)} type="button">Delete</button></div></td>
+                    </tr>;
+                  })}
                   {!products.length && <tr><td colSpan="6">No products in the catalog yet.</td></tr>}
                 </tbody></table></div>
               </section>
@@ -332,9 +364,8 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                   <div className="table-scroll"><table className="admin-table user-admin-table"><thead><tr>
                     <th>ID</th><th>Username</th><th>Email</th><th>First name</th><th>Last name</th><th>Joined</th><th>Last login</th><th>Active</th><th>Staff</th><th>Superuser</th><th>Actions</th>
                   </tr></thead><tbody>
-                    {users.map((user) => {
-                      const isCurrentUser = user.id === currentUserId;
-                      return <tr key={user.id}>
+                    {users.map((user) => (
+                      <tr key={user.id}>
                         <td>{user.id}</td>
                         <td><input aria-label={`Username for ${user.username}`} className="user-admin-input" value={user.username} onChange={(event) => editUser(user.id, 'username', event.target.value)} /></td>
                         <td><input aria-label={`Email for ${user.username}`} className="user-admin-input" type="email" value={user.email || ''} onChange={(event) => editUser(user.id, 'email', event.target.value)} /></td>
@@ -352,8 +383,8 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                           /></td>
                         ))}
                         <td><button className="table-action-button" type="button"  onClick={() => saveUser(user)}>{savingUserId === user.id ? 'Saving…' : 'Save'}</button></td>
-                      </tr>;
-                    })}
+                      </tr>
+                    ))}
                     {!users.length && <tr><td colSpan="11">No users found.</td></tr>}
                   </tbody></table></div>
                 )}
@@ -369,10 +400,26 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
 function OrderTable({ orders, onUpdate }) {
   if (!orders.length) return <p className="empty-table">Nothing to see here yet. Orders will show up when customers check out.</p>;
   return (
-    <div className="table-scroll"><table className="admin-table"><thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>
+    <div className="table-scroll"><table className="admin-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Date</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>
       {orders.map((order) => <tr key={order.id}>
         <td><strong>{order.order_number}</strong></td>
         <td>{order.shipping_name}</td>
+        <td>
+          <div className="admin-order-items">
+            {order.items?.map((item) => (
+              <div className="admin-order-item" key={item.id} title={`${item.quantity} × ${item.product_name}`}>
+                <div className="admin-order-thumb">
+                  {item.image_url ? (
+                    <img src={item.image_url} alt="" />
+                  ) : (
+                    <span>{(item.product_name || 'W').slice(0, 1)}</span>
+                  )}
+                </div>
+                <span>{item.quantity} × {item.product_name}</span>
+              </div>
+            ))}
+          </div>
+        </td>
         <td>{new Date(order.created_at).toLocaleDateString()}</td>
         <td>{money(order.total_amount)}</td>
         <td><span>{order.payment?.payment_method || '—'}</span><small className="table-subtext">{order.payment?.payment_status || ''}</small></td>
