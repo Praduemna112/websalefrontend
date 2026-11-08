@@ -89,8 +89,18 @@ export default function Storefront({ sessionId, onCartChange }) {
           api('/api/categories/'),
         ]);
         if (active) {
-          setProducts(unwrapList(productData));
-          setCategories(unwrapList(categoryData));
+          const loadedCategories = unwrapList(categoryData).filter((c) => c.is_active !== false);
+          const loadedProducts = unwrapList(productData).filter((p) => {
+            if (p.is_active === false) return false;
+            if (p.category_is_active === false) return false;
+            if (p.category && loadedCategories.length > 0) {
+              const catExists = loadedCategories.some((c) => c.id === p.category);
+              if (!catExists) return false;
+            }
+            return true;
+          });
+          setCategories(loadedCategories);
+          setProducts(loadedProducts);
         }
       } catch (loadError) {
         if (active) setError(loadError.message);
@@ -101,6 +111,12 @@ export default function Storefront({ sessionId, onCartChange }) {
     load();
     return () => { active = false; };
   }, [category, query]);
+
+  useEffect(() => {
+    if (category && categories.length && !categories.some((c) => String(c.id) === String(category))) {
+      setCategory('');
+    }
+  }, [categories, category]);
 
   async function addToCart(product) {
     await api('/api/cart/add/', {

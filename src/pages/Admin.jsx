@@ -2,6 +2,51 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api, jsonBody, unwrapList } from '../services/api';
 
 const ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
+
+export const STATUS_CONFIG = {
+  PENDING: {
+    label: 'Pending',
+    color: '#92400e',
+    bg: '#fef3c7',
+    border: '#fde68a',
+    dot: '#d97706',
+  },
+  CONFIRMED: {
+    label: 'Confirmed',
+    color: '#0e7490',
+    bg: '#e0f2fe',
+    border: '#bae6fd',
+    dot: '#0284c7',
+  },
+  PROCESSING: {
+    label: 'Processing',
+    color: '#1d4ed8',
+    bg: '#dbeafe',
+    border: '#bfdbfe',
+    dot: '#2563eb',
+  },
+  SHIPPED: {
+    label: 'Shipped',
+    color: '#6b21a8',
+    bg: '#f3e8ff',
+    border: '#e9d5ff',
+    dot: '#9333ea',
+  },
+  DELIVERED: {
+    label: 'Delivered',
+    color: '#166534',
+    bg: '#dcfce7',
+    border: '#bbf7d0',
+    dot: '#16a34a',
+  },
+  CANCELLED: {
+    label: 'Cancelled',
+    color: '#991b1b',
+    bg: '#fee2e2',
+    border: '#fecaca',
+    dot: '#dc2626',
+  },
+};
 const MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024;
 const PRODUCT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -16,7 +61,8 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
   const [payments, setPayments] = useState([]);
   const [users, setUsers] = useState([]);
   const [productForm, setProductForm] = useState(null);
-  const [categoryName, setCategoryName] = useState('');
+  const [categoryForm, setCategoryForm] = useState(null);
+  const [savingCategory, setSavingCategory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingUserId, setSavingUserId] = useState(null);
@@ -25,6 +71,7 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [section, setSection] = useState('overview');
+  const [selectedOrderStatus, setSelectedOrderStatus] = useState('');
 
   const loadDashboard = useCallback(async () => {
     const [productData, categoryData, orderData, paymentData] = await Promise.all([
@@ -208,17 +255,88 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
     }
   }
 
-  async function createCategory(event) {
+  function startCategory(category) {
+    setCategoryForm(category ? {
+      id: category.id,
+      name: category.name,
+      description: category.description || '',
+      is_active: category.is_active !== false,
+    } : {
+      name: '',
+      description: '',
+      is_active: true,
+    });
+    setError('');
+  }
+
+  async function saveCategory(event) {
     event.preventDefault();
+    setSavingCategory(true);
+    setError('');
+    setNotice('');
+    const payload = {
+      name: categoryForm.name.trim(),
+      description: categoryForm.description ? categoryForm.description.trim() : '',
+      is_active: Boolean(categoryForm.is_active),
+    };
+    const path = categoryForm.id ? `/api/categories/${categoryForm.id}/` : '/api/categories/';
+    try {
+      await api(path, { method: categoryForm.id ? 'PATCH' : 'POST', body: jsonBody(payload) });
+      setCategoryForm(null);
+      setNotice(
+        categoryForm.id
+          ? (payload.is_active
+              ? `Category “${payload.name}” updated.`
+              : `Category “${payload.name}” updated and hidden from shop (its products are now hidden).`)
+          : (payload.is_active
+              ? `Category “${payload.name}” created.`
+              : `Category “${payload.name}” created as hidden (its products will be hidden).`)
+      );
+      await loadDashboard();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSavingCategory(false);
+    }
+  }
+
+  async function deleteCategory(category) {
+    const productWarning = category.products_count > 0
+      ? `\n\nNote: ${category.products_count} product(s) in this category will become Uncategorized.`
+      : '';
+    if (!window.confirm(`Delete category “${category.name}”?${productWarning}`)) return;
     setError('');
     setNotice('');
     try {
-      await api('/api/categories/', { method: 'POST', body: jsonBody({ name: categoryName.trim() }) });
-      setCategoryName('');
-      setNotice('Category created.');
+      await api(`/api/categories/${category.id}/`, { method: 'DELETE' });
+      setCategories((current) => current.filter((item) => item.id !== category.id));
+      setNotice(`Category “${category.name}” deleted.`);
       await loadDashboard();
-    } catch (createError) {
-      setError(createError.message);
+    } catch (deleteError) {
+      setError(deleteError.message);
+    }
+  }
+
+  async function toggleCategoryVisibility(category) {
+    const newStatus = !(category.is_active !== false);
+    setError('');
+    setNotice('');
+    try {
+      await api(`/api/categories/${category.id}/`, {
+        method: 'PATCH',
+        body: jsonBody({ is_active: newStatus }),
+      });
+      setCategories((current) => current.map((item) => (
+        item.id === category.id ? { ...item, is_active: newStatus } : item
+      )));
+      setNotice(
+        newStatus
+          ? `Category “${category.name}” is now visible in the shop.`
+          : `Category “${category.name}” is now hidden. All its products are also hidden from the shop.`
+      );
+      await loadDashboard();
+    } catch (toggleError) {
+      setError(toggleError.message);
     }
   }
 
@@ -240,6 +358,15 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
   const revenue = orders
     .filter((order) => order.status !== 'CANCELLED')
     .reduce((sum, order) => sum + Number(order.total_amount), 0);
+
+  const pendingCount = orders.filter((order) => order.status === 'PENDING').length;
+  const inProgressCount = orders.filter((order) => order.status === 'CONFIRMED' || order.status === 'PROCESSING' || order.status === 'SHIPPED').length;
+  const deliveredCount = orders.filter((order) => order.status === 'DELIVERED').length;
+  const cancelledCount = orders.filter((order) => order.status === 'CANCELLED').length;
+
+  const filteredOrders = selectedOrderStatus
+    ? orders.filter((order) => order.status === selectedOrderStatus)
+    : orders;
 
   return (
     <main className="admin-shell">
@@ -264,15 +391,108 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
             {section === 'overview' && (
               <>
                 <div className="stat-grid">
-                  <article className="stat-card"><span>Active products</span><strong>{products.filter((item) => item.is_active).length}</strong><small>Across {categories.length} categories</small></article>
-                  <article className="stat-card"><span>All orders</span><strong>{orders.length}</strong><small>{orders.filter((item) => item.status === 'PENDING').length} need a look</small></article>
-                  <article className="stat-card"><span>Order value</span><strong>{money(revenue)}</strong><small>Excludes cancelled orders</small></article>
-                  <article className="stat-card"><span>Payments on file</span><strong>{payments.length}</strong><small>Customer payments</small></article>
+                  <article className="stat-card">
+                    <span>Active products</span>
+                    <strong>{products.filter((item) => item.is_active).length}</strong>
+                    <small>Across {categories.filter((item) => item.is_active !== false).length} active ({categories.length} total) categories</small>
+                  </article>
+                  <article
+                    className={`stat-card stat-card-status ${!selectedOrderStatus ? '' : ''}`}
+                    onClick={() => setSelectedOrderStatus('')}
+                    title="Click to view all orders"
+                  >
+                    <span>All orders</span>
+                    <strong>{orders.length}</strong>
+                    <small>{pendingCount} need a look · Click to see all</small>
+                  </article>
+                  <article className="stat-card">
+                    <span>Order value</span>
+                    <strong>{money(revenue)}</strong>
+                    <small>Excludes cancelled orders</small>
+                  </article>
+                  <article className="stat-card">
+                    <span>Payments on file</span>
+                    <strong>{payments.length}</strong>
+                    <small>Customer payments</small>
+                  </article>
+
+                  <article
+                    className={`stat-card stat-card-status ${selectedOrderStatus === 'PENDING' ? 'active' : ''}`}
+                    style={{ borderLeft: `4px solid ${STATUS_CONFIG.PENDING.dot}` }}
+                    onClick={() => setSelectedOrderStatus(selectedOrderStatus === 'PENDING' ? '' : 'PENDING')}
+                    title="Click to filter by Pending orders"
+                  >
+                    <span style={{ color: STATUS_CONFIG.PENDING.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="order-status-dot" style={{ backgroundColor: STATUS_CONFIG.PENDING.dot }} />
+                      Pending orders
+                    </span>
+                    <strong style={{ color: STATUS_CONFIG.PENDING.color }}>{pendingCount}</strong>
+                    <small>{selectedOrderStatus === 'PENDING' ? 'Filtering active (click to reset)' : `${pendingCount} orders await action`}</small>
+                  </article>
+
+                  <article
+                    className={`stat-card stat-card-status ${selectedOrderStatus === 'PROCESSING' || selectedOrderStatus === 'CONFIRMED' ? 'active' : ''}`}
+                    style={{ borderLeft: `4px solid ${STATUS_CONFIG.PROCESSING.dot}` }}
+                    onClick={() => setSelectedOrderStatus(selectedOrderStatus === 'PROCESSING' ? '' : 'PROCESSING')}
+                    title="Click to filter by Processing orders"
+                  >
+                    <span style={{ color: STATUS_CONFIG.PROCESSING.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="order-status-dot" style={{ backgroundColor: STATUS_CONFIG.PROCESSING.dot }} />
+                      Confirmed / In-progress
+                    </span>
+                    <strong style={{ color: STATUS_CONFIG.PROCESSING.color }}>{inProgressCount}</strong>
+                    <small>{selectedOrderStatus === 'PROCESSING' ? 'Filtering active (click to reset)' : 'Confirmed, processing or shipped'}</small>
+                  </article>
+
+                  <article
+                    className={`stat-card stat-card-status ${selectedOrderStatus === 'DELIVERED' ? 'active' : ''}`}
+                    style={{ borderLeft: `4px solid ${STATUS_CONFIG.DELIVERED.dot}` }}
+                    onClick={() => setSelectedOrderStatus(selectedOrderStatus === 'DELIVERED' ? '' : 'DELIVERED')}
+                    title="Click to filter by Delivered orders"
+                  >
+                    <span style={{ color: STATUS_CONFIG.DELIVERED.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="order-status-dot" style={{ backgroundColor: STATUS_CONFIG.DELIVERED.dot }} />
+                      Delivered (Complete)
+                    </span>
+                    <strong style={{ color: STATUS_CONFIG.DELIVERED.color }}>{deliveredCount}</strong>
+                    <small>{selectedOrderStatus === 'DELIVERED' ? 'Filtering active (click to reset)' : 'Fulfilled and delivered'}</small>
+                  </article>
+
+                  <article
+                    className={`stat-card stat-card-status ${selectedOrderStatus === 'CANCELLED' ? 'active' : ''}`}
+                    style={{ borderLeft: `4px solid ${STATUS_CONFIG.CANCELLED.dot}` }}
+                    onClick={() => setSelectedOrderStatus(selectedOrderStatus === 'CANCELLED' ? '' : 'CANCELLED')}
+                    title="Click to filter by Cancelled orders"
+                  >
+                    <span style={{ color: STATUS_CONFIG.CANCELLED.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="order-status-dot" style={{ backgroundColor: STATUS_CONFIG.CANCELLED.dot }} />
+                      Cancelled orders
+                    </span>
+                    <strong style={{ color: STATUS_CONFIG.CANCELLED.color }}>{cancelledCount}</strong>
+                    <small>{selectedOrderStatus === 'CANCELLED' ? 'Filtering active (click to reset)' : 'Cancelled or voided'}</small>
+                  </article>
+
                   {isSuperuser && <article className="stat-card"><span>Registered users</span><strong>{users.length}</strong><small>Active and inactive accounts</small></article>}
                 </div>
                 <section className="admin-panel">
-                  <div className="panel-heading panel-heading-row"><div><span className="eyebrow">FRESH FROM THE SHOP</span><h3>Recent orders</h3></div><button className="text-link" onClick={() => setSection('orders')} type="button">All orders →</button></div>
-                  <OrderTable orders={orders.slice(0, 6)} onUpdate={updateOrder} />
+                  <div className="panel-heading panel-heading-row">
+                    <div>
+                      <span className="eyebrow">FRESH FROM THE SHOP</span>
+                      <h3>Recent orders</h3>
+                    </div>
+                    <button className="text-link" onClick={() => setSection('orders')} type="button">All orders ({orders.length}) →</button>
+                  </div>
+                  <OrderStatusStrip
+                    orders={orders}
+                    selectedStatus={selectedOrderStatus}
+                    onSelectStatus={setSelectedOrderStatus}
+                  />
+                  <OrderTable
+                    orders={filteredOrders.slice(0, 6)}
+                    onUpdate={updateOrder}
+                    selectedStatus={selectedOrderStatus}
+                    onClearFilter={() => setSelectedOrderStatus('')}
+                  />
                 </section>
                 <section className="admin-panel">
                   <div className="panel-heading"><span className="eyebrow">KEEP AN EYE ON IT</span><h3>Stock watch</h3></div>
@@ -290,7 +510,7 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                     <div className="panel-heading"><h3>{productForm.id ? 'Edit product' : 'New product'}</h3></div>
                     <div className="form-grid">
                       <label className="field">Product name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                      <label className="field">Category<select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}><option value="">Uncategorized</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                      <label className="field">Category<select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}><option value="">Uncategorized</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.is_active === false ? ' (Hidden)' : ''}</option>)}</select></label>
                       <label className="field">Price (₹)<input required type="number" min="0.01" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                       <label className="field">Original price (₹)<input type="number" min="0" step="0.01" value={productForm.original_price} onChange={(event) => setProductForm({ ...productForm, original_price: event.target.value })} /></label>
                       <label className="field">Stock<input required type="number" min="0" step="1" value={productForm.stock} onChange={(event) => setProductForm({ ...productForm, stock: event.target.value })} /></label>
@@ -315,7 +535,20 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                       : 0);
                     return <tr key={product.id}>
                       <td><strong>{product.name}</strong></td>
-                      <td>{product.category_name || '—'}</td>
+                      <td>
+                        <strong>{product.category_name || '—'}</strong>
+                        {(() => {
+                          const cat = categories.find((c) => c.id === product.category);
+                          if (cat && cat.is_active === false) {
+                            return (
+                              <div className="table-subtext danger-text" title="Category is hidden from shop">
+                                Category hidden
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </td>
                       <td>
                         <strong>{money(product.price)}</strong>
                         {hasDiscount && (
@@ -337,7 +570,25 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                           <div className="table-subtext danger-text">Out of stock</div>
                         )}
                       </td>
-                      <td><span className={`status-pill ${product.is_active ? 'status-confirmed' : 'status-cancelled'}`}>{product.is_active ? 'Live' : 'Hidden'}</span></td>
+                      <td>
+                        {(() => {
+                          const cat = categories.find((c) => c.id === product.category);
+                          const isCatHidden = cat && cat.is_active === false;
+                          const isLive = product.is_active && !isCatHidden;
+                          return (
+                            <>
+                              <span className={`status-pill ${isLive ? 'status-confirmed' : !product.is_active ? 'status-cancelled' : 'status-pending'}`}>
+                                {!product.is_active ? 'Hidden' : isCatHidden ? 'Hidden (Cat. off)' : 'Live'}
+                              </span>
+                              {isCatHidden && product.is_active && (
+                                <div className="table-subtext danger-text" style={{ marginTop: '2px' }}>
+                                  Category hidden
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </td>
                       <td><div className="table-actions"><button onClick={() => startProduct(product)} type="button">Edit</button><button className="danger-text" onClick={() => deleteProduct(product)} type="button">Delete</button></div></td>
                     </tr>;
                   })}
@@ -345,12 +596,148 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                 </tbody></table></div>
               </section>
             )}
-            {section === 'orders' && <section className="admin-panel"><div className="panel-heading"><span className="eyebrow">FROM YOUR CUSTOMERS</span><h3>Order management</h3></div><OrderTable orders={orders} onUpdate={updateOrder} /></section>}
+            {section === 'orders' && (
+              <section className="admin-panel">
+                <div className="panel-heading panel-heading-row">
+                  <div>
+                    <span className="eyebrow">FROM YOUR CUSTOMERS</span>
+                    <h3>Order management <small>({filteredOrders.length}{selectedOrderStatus ? ` of ${orders.length}` : ' total'})</small></h3>
+                  </div>
+                  {selectedOrderStatus && (
+                    <button className="button button-outline" type="button" onClick={() => setSelectedOrderStatus('')}>
+                      Show all orders
+                    </button>
+                  )}
+                </div>
+                <OrderStatusStrip
+                  orders={orders}
+                  selectedStatus={selectedOrderStatus}
+                  onSelectStatus={setSelectedOrderStatus}
+                />
+                <OrderTable
+                  orders={filteredOrders}
+                  onUpdate={updateOrder}
+                  selectedStatus={selectedOrderStatus}
+                  onClearFilter={() => setSelectedOrderStatus('')}
+                />
+              </section>
+            )}
             {section === 'categories' && (
               <section className="admin-panel">
-                <div className="panel-heading"><span className="eyebrow">ORGANIZE THE GOOD STUFF</span><h3>Categories</h3></div>
-                <form className="category-form" onSubmit={createCategory}><label className="field">New category<input required value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="e.g. Home & living" /></label><button className="button button-primary" type="submit">Add category</button></form>
-                <div className="category-admin-list">{categories.map((category) => <div key={category.id}><div><strong>{category.name}</strong><span>{category.products_count || 0} products</span></div><span className="category-slug">{category.slug}</span></div>)}{!categories.length && <p>No categories yet.</p>}</div>
+                <div className="panel-heading panel-heading-row">
+                  <div>
+                    <span className="eyebrow">ORGANIZE THE GOOD STUFF</span>
+                    <h3>Categories <small>({categories.length})</small></h3>
+                  </div>
+                  <button className="button button-primary" type="button" onClick={() => startCategory(null)}>
+                    + Add category
+                  </button>
+                </div>
+
+                {categoryForm && (
+                  <form className="admin-form" onSubmit={saveCategory}>
+                    <div className="panel-heading">
+                      <h3>{categoryForm.id ? 'Edit category' : 'New category'}</h3>
+                    </div>
+                    <div className="form-grid">
+                      <label className="field">
+                        Category name
+                        <input
+                          required
+                          value={categoryForm.name}
+                          onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })}
+                          placeholder="e.g. Home & living"
+                        />
+                      </label>
+                      <label className="field full-field">
+                        Description (optional)
+                        <textarea
+                          rows="2"
+                          value={categoryForm.description}
+                          onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })}
+                          placeholder="Brief description of this category"
+                        />
+                      </label>
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={categoryForm.is_active}
+                          onChange={(event) => setCategoryForm({ ...categoryForm, is_active: event.target.checked })}
+                        />
+                        Visible in the shop (when turned off, all products in this category will also be hidden from customers)
+                      </label>
+                    </div>
+                    <div className="form-actions">
+                      <button className="button button-primary" disabled={savingCategory} type="submit">
+                        {savingCategory ? 'Saving…' : categoryForm.id ? 'Save changes' : 'Create category'}
+                      </button>
+                      <button className="button button-outline" type="button" onClick={() => setCategoryForm(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="table-scroll">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Slug</th>
+                        <th>Products</th>
+                        <th>Visibility</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categories.map((category) => {
+                        const isVisible = category.is_active !== false;
+                        return (
+                          <tr key={category.id}>
+                            <td>
+                              <strong>{category.name}</strong>
+                              {category.description && (
+                                <div className="table-subtext">{category.description}</div>
+                              )}
+                            </td>
+                            <td>
+                              <span className="category-slug">{category.slug}</span>
+                            </td>
+                            <td>
+                              <strong>{category.products_count || 0}</strong> products
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className={`status-pill status-pill-button ${isVisible ? 'status-confirmed' : 'status-cancelled'}`}
+                                title="Click to toggle category visibility"
+                                onClick={() => toggleCategoryVisibility(category)}
+                              >
+                                {isVisible ? 'Live (Visible)' : 'Hidden (Not Visible)'}
+                              </button>
+                              {!isVisible && (
+                                <div className="table-subtext danger-text" style={{ marginTop: '3px' }}>
+                                  Products hidden from shop
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div className="table-actions">
+                                <button onClick={() => startCategory(category)} type="button">Edit</button>
+                                <button className="danger-text" onClick={() => deleteCategory(category)} type="button">Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {!categories.length && (
+                        <tr>
+                          <td colSpan="5">No categories yet. Click "+ Add category" above.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
             {section === 'users' && isSuperuser && (
@@ -397,34 +784,139 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
   );
 }
 
-function OrderTable({ orders, onUpdate }) {
-  if (!orders.length) return <p className="empty-table">Nothing to see here yet. Orders will show up when customers check out.</p>;
+function OrderStatusStrip({ orders = [], selectedStatus = '', onSelectStatus }) {
+  return (
+    <div className="order-status-strip">
+      <span className="order-status-strip-title">Status counts:</span>
+      <button
+        type="button"
+        className={`order-status-chip order-status-chip-all ${!selectedStatus ? 'active' : ''}`}
+        onClick={() => onSelectStatus && onSelectStatus('')}
+        title="Show all orders"
+      >
+        <span>All</span>
+        <strong className="order-status-chip-count">{orders.length}</strong>
+      </button>
+      {ORDER_STATUSES.map((status) => {
+        const config = STATUS_CONFIG[status];
+        const count = orders.filter((o) => o.status === status).length;
+        const isSelected = selectedStatus === status;
+        return (
+          <button
+            type="button"
+            key={status}
+            className={`order-status-chip ${isSelected ? 'active' : ''}`}
+            onClick={() => onSelectStatus && onSelectStatus(isSelected ? '' : status)}
+            style={{
+              backgroundColor: config.bg,
+              color: config.color,
+              borderColor: isSelected ? config.color : config.border,
+            }}
+            title={`Filter by ${config.label} (${count} orders)`}
+          >
+            <span className="order-status-dot" style={{ backgroundColor: config.dot }} />
+            <span>{config.label}</span>
+            <strong className="order-status-chip-count" style={{ color: config.color }}>{count}</strong>
+          </button>
+        );
+      })}
+      {selectedStatus && (
+        <span className="order-filter-active-note">
+          Filtered by <strong>{STATUS_CONFIG[selectedStatus]?.label || selectedStatus}</strong>
+          <button type="button" className="order-filter-reset" onClick={() => onSelectStatus && onSelectStatus('')}>
+            Reset filter
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function OrderTable({ orders, onUpdate, selectedStatus = '', onClearFilter }) {
+  if (!orders.length) {
+    return (
+      <div className="empty-table">
+        {selectedStatus ? (
+          <p>
+            No <strong>{STATUS_CONFIG[selectedStatus]?.label || selectedStatus}</strong> orders found.{' '}
+            {onClearFilter && (
+              <button type="button" className="order-filter-reset" onClick={onClearFilter}>
+                Show all orders
+              </button>
+            )}
+          </p>
+        ) : (
+          <p>Nothing to see here yet. Orders will show up when customers check out.</p>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="table-scroll"><table className="admin-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Date</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>
-      {orders.map((order) => <tr key={order.id}>
-        <td><strong>{order.order_number}</strong></td>
-        <td>{order.shipping_name}</td>
-        <td>
-          <div className="admin-order-items">
-            {order.items?.map((item) => (
-              <div className="admin-order-item" key={item.id} title={`${item.quantity} × ${item.product_name}`}>
-                <div className="admin-order-thumb">
-                  {item.image_url ? (
-                    <img src={item.image_url} alt="" />
-                  ) : (
-                    <span>{(item.product_name || 'W').slice(0, 1)}</span>
-                  )}
-                </div>
-                <span>{item.quantity} × {item.product_name}</span>
+      {orders.map((order) => {
+        const config = STATUS_CONFIG[order.status] || {
+          color: '#374151',
+          bg: '#f3f4f6',
+          border: '#e5e7eb',
+          dot: '#9ca3af',
+        };
+        return (
+          <tr key={order.id}>
+            <td><strong>{order.order_number}</strong></td>
+            <td>{order.shipping_name}</td>
+            <td>
+              <div className="admin-order-items">
+                {order.items?.map((item) => (
+                  <div className="admin-order-item" key={item.id} title={`${item.quantity} × ${item.product_name}`}>
+                    <div className="admin-order-thumb">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt="" />
+                      ) : (
+                        <span>{(item.product_name || 'W').slice(0, 1)}</span>
+                      )}
+                    </div>
+                    <span>{item.quantity} × {item.product_name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </td>
-        <td>{new Date(order.created_at).toLocaleDateString()}</td>
-        <td>{money(order.total_amount)}</td>
-        <td><span>{order.payment?.payment_method || '—'}</span><small className="table-subtext">{order.payment?.payment_status || ''}</small></td>
-        <td><select aria-label={`Update status for ${order.order_number}`} value={order.status} onChange={(event) => onUpdate(order, event.target.value)}>{ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></td>
-      </tr>)}
+            </td>
+            <td>{new Date(order.created_at).toLocaleDateString()}</td>
+            <td>{money(order.total_amount)}</td>
+            <td><span>{order.payment?.payment_method || '—'}</span><small className="table-subtext">{order.payment?.payment_status || ''}</small></td>
+            <td>
+              <div className="order-status-control">
+                <span
+                  className="order-status-badge"
+                  style={{
+                    backgroundColor: config.bg,
+                    color: config.color,
+                    borderColor: config.border,
+                  }}
+                >
+                  <span className="order-status-dot" style={{ backgroundColor: config.dot }} />
+                  {order.status}
+                </span>
+                <select
+                  aria-label={`Update status for ${order.order_number}`}
+                  value={order.status}
+                  onChange={(event) => onUpdate(order, event.target.value)}
+                  className="order-status-select"
+                  style={{
+                    borderColor: config.border,
+                    color: config.color,
+                  }}
+                >
+                  {ORDER_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </td>
+          </tr>
+        );
+      })}
     </tbody></table></div>
   );
 }
