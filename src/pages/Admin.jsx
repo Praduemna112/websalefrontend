@@ -360,7 +360,7 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
               : '';
       setNotice(`Order ${order.order_number} updated.${emailMessage}`);
     } catch (updateError) {
-      setError(updateError.message);
+      setError(updateError.message); 
     }
   }
 
