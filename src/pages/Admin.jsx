@@ -349,9 +349,40 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
         body: jsonBody({ status }),
       });
       setOrders((current) => current.map((item) => item.id === order.id ? result.order : item));
-      setNotice(`Order ${order.order_number} updated.`);
+      const emailMessage = result.email_notification === 'sent'
+        ? ' Customer email sent.'
+        : result.email_notification === 'logged'
+          ? ' Email was only logged by the backend console; it was not delivered.'
+          : result.email_notification === 'not_configured'
+            ? ' Customer email was not sent. Configure EMAIL_HOST_USER and EMAIL_HOST_PASSWORD on the backend.'
+            : result.email_notification === 'failed'
+              ? ' Order updated, but the customer email could not be sent. Check backend email settings.'
+              : '';
+      setNotice(`Order ${order.order_number} updated.${emailMessage}`);
     } catch (updateError) {
       setError(updateError.message);
+    }
+  }
+
+  async function resendOrderStatusEmail(order) {
+    setError('');
+    setNotice('');
+    try {
+      const result = await api(`/api/orders/${encodeURIComponent(order.order_number)}/resend-status-email/`, {
+        method: 'POST',
+      });
+      const emailMessage = result.email_notification === 'sent'
+        ? 'Current status email sent.'
+        : result.email_notification === 'logged'
+          ? 'Email was only logged by the backend console; it was not delivered.'
+          : result.email_notification === 'not_configured'
+            ? 'Email was not sent. Configure EMAIL_HOST_USER and EMAIL_HOST_PASSWORD on the backend.'
+            : result.email_notification === 'failed'
+              ? 'Email could not be sent. Check backend email settings.'
+              : 'No email is available for this order status.';
+      setNotice(`Order ${order.order_number}: ${emailMessage}`);
+    } catch (sendError) {
+      setError(sendError.message);
     }
   }
 
@@ -490,6 +521,7 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                   <OrderTable
                     orders={filteredOrders.slice(0, 6)}
                     onUpdate={updateOrder}
+                    onResendStatusEmail={resendOrderStatusEmail}
                     selectedStatus={selectedOrderStatus}
                     onClearFilter={() => setSelectedOrderStatus('')}
                   />
@@ -617,6 +649,7 @@ export default function AdminPage({ currentUserId, isSuperuser = false }) {
                 <OrderTable
                   orders={filteredOrders}
                   onUpdate={updateOrder}
+                  onResendStatusEmail={resendOrderStatusEmail}
                   selectedStatus={selectedOrderStatus}
                   onClearFilter={() => setSelectedOrderStatus('')}
                 />
@@ -832,7 +865,7 @@ function OrderStatusStrip({ orders = [], selectedStatus = '', onSelectStatus }) 
   );
 }
 
-function OrderTable({ orders, onUpdate, selectedStatus = '', onClearFilter }) {
+function OrderTable({ orders, onUpdate, onResendStatusEmail, selectedStatus = '', onClearFilter }) {
   if (!orders.length) {
     return (
       <div className="empty-table">
@@ -912,6 +945,15 @@ function OrderTable({ orders, onUpdate, selectedStatus = '', onClearFilter }) {
                     </option>
                   ))}
                 </select>
+                {onResendStatusEmail && order.status !== 'PENDING' && (
+                  <button
+                    className="table-action-button"
+                    type="button"
+                    onClick={() => onResendStatusEmail(order)}
+                  >
+                    Resend email
+                  </button>
+                )}
               </div>
             </td>
           </tr>
