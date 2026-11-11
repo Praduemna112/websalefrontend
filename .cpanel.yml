@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/vhzafsazwu/jiovendor.com/Frontend
+    - export NVM_DIR=/opt/cpanel/nvm
+    - source $NVM_DIR/nvm.sh
+    - cd /home/vhzafsazwu/repositories/websalefrontend
+    - npm install
+    - npm run build
+    - /bin/cp -R build/. $DEPLOYPATH
